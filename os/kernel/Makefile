@@ -11,22 +11,18 @@ KERNEL_CFLAGS = -ffreestanding -mcmodel=kernel -mno-red-zone -mno-mmx \
          -fno-stack-protector -fno-pic -fno-pie -O2 -Wall -Wextra -c
 KERNEL_LDFLAGS = -n -T linker.ld -nostdlib
 
-# NEW: Shared object flags for kernel.so
-KERNEL_SO_CFLAGS = -ffreestanding -fPIC -shared -nostdlib -nostartfiles \
-                   -mno-red-zone -fno-stack-protector -O2 -m64 \
-                   -fno-asynchronous-unwind-tables
-
 # Directories
 BUILDDIR = ../build
 OSDIR = $(BUILDDIR)/os
 
 # Kernel source files
-KERNEL_C_SOURCES = kernel.c
+KERNEL_C_SOURCES = $(wildcard *.c)
 KERNEL_ASM_SOURCES = ../boot/header.asm
 KERNEL_CONFIG_FILES = slist.cfg
 
-# Generate object file paths
-KERNEL_C_OBJECTS = $(patsubst %.c,$(BUILDDIR)/kernel/%.o,$(KERNEL_C_SOURCES))
+# CHANGED: Combined file in kernel dir
+KERNEL_COMBINED = kernel_combined.c
+KERNEL_C_OBJECTS = $(BUILDDIR)/kernel/kernel.o
 KERNEL_ASM_OBJECTS = $(patsubst ../boot/%.asm,$(BUILDDIR)/%.o,$(KERNEL_ASM_SOURCES))
 
 # All objects
@@ -34,7 +30,6 @@ KERNEL_OBJECTS = $(KERNEL_C_OBJECTS) $(KERNEL_ASM_OBJECTS)
 
 # Output binary
 KERNEL_BIN = $(BUILDDIR)/kernel.bin
-KERNEL_SO = $(BUILDDIR)/kernel.so
 
 .PHONY: all clean
 
@@ -44,8 +39,17 @@ all: $(KERNEL_BIN) copy_configs
 $(BUILDDIR)/kernel:
 	mkdir -p $(BUILDDIR)/kernel
 
-# Compile C files
-$(BUILDDIR)/kernel/%.o: %.c | $(BUILDDIR)/kernel
+# CHANGED: Create combined source file in kernel dir
+# CHANGED: Create combined source file in kernel dir
+$(KERNEL_COMBINED): $(KERNEL_C_SOURCES)
+	echo '#include "include.h"' > $@
+	for src in $(KERNEL_C_SOURCES); do \
+		echo "/* === $$src === */" >> $@; \
+		grep -v '^#include' $$src >> $@; \
+	done
+
+# CHANGED: Compile combined file
+$(BUILDDIR)/kernel/kernel.o: $(KERNEL_COMBINED) | $(BUILDDIR)/kernel
 	$(CC) $(KERNEL_CFLAGS) $< -o $@
 
 # Compile ASM files
@@ -58,11 +62,6 @@ $(KERNEL_BIN): $(KERNEL_OBJECTS) linker.ld
 	mkdir -p $(OSDIR)/kernel
 	cp $@ $(OSDIR)/kernel/kernel.bin
 
-# NEW: Build kernel.so (shared object version)
-$(KERNEL_SO): kernel.c
-	$(CC) $(KERNEL_SO_CFLAGS) kernel.c -o $@
-	cp $@ $(OSDIR)/modules/sys/kernel.so
-
 # Copy configuration files
 copy_configs:
 	mkdir -p $(OSDIR)/kernel
@@ -73,4 +72,4 @@ copy_configs:
 	done
 
 clean:
-	rm -f $(KERNEL_OBJECTS) $(KERNEL_BIN)
+	rm -f $(KERNEL_OBJECTS) $(KERNEL_BIN) $(KERNEL_COMBINED)
